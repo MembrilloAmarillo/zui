@@ -291,11 +291,14 @@ pub const context = struct {
 		self.boxes.push(new_box);
 
 		if( self.is_cursor_over(new_box.bounds) or self.boxes.get_front() == self.focus_box) {
+
+			self.boxes.get_front().color[3] *= 0.9;
+			self.boxes.get_front().color[0] *= 1.1;
 			input = self.current_event.event;
 
-                        if( self.current_event.key > 255 ) {
-                        
-                        } else if( @as(u8, @intCast(self.current_event.key)) >= ' ' and @as(u8, @intCast(self.current_event.key)) <= '~') {
+            if( self.current_event.key > 255 ) {
+            
+            } else if( @as(u8, @intCast(self.current_event.key)) >= ' ' and @as(u8, @intCast(self.current_event.key)) <= '~') {
 				var current_len: usize = 0;
 	            while (current_len < id.len and id[current_len] != 0) : (current_len += 1) {}
 	            id[current_len] = self.current_event.key;

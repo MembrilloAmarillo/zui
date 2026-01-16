@@ -9,7 +9,7 @@ const ui = @import("ui.zig");
 var font: ?*c.TTF_Font = null;
 var text_engine: ?*c.TTF_TextEngine = null;
 
-pub fn run_process(std_process_init: std.process.Init) !void {
+pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, directory: []const u8) !void {
     const SystemMemory = std.process.totalSystemMemory() catch std.math.maxInt(u64);
 
     std.debug.print("Total System Memory: {}\n", .{SystemMemory >> 30});
@@ -17,11 +17,12 @@ pub fn run_process(std_process_init: std.process.Init) !void {
     const allocator = std_process_init.gpa;
     const io = std_process_init.io;
 
-    const argv = [_][]const u8{ "ls", "-la", "./" };
+    //const argv = [_][]const u8{ "ls", "-la", "./" };
 
     const result = try std.process.run(allocator, io, .{
-        .argv = &argv,
+        .argv = argv,
         .max_output_bytes = 1024 * 1024,
+        .cwd = directory
     });
 
     std.debug.print("Result: {}\n", .{result});
@@ -49,7 +50,11 @@ pub fn get_event() ui.event_output {
             },
             c.SDL_EVENT_TEXT_INPUT => {
                 const text = event.text.text;
-                std.debug.print("Text: {s}\n", .{text});
+                const key = text[0];    
+                if( key > 255 ) {}
+                else if( @as(u8, @intCast(key)) >= ' ' and @as(u8, @intCast(key)) <= '~') {
+                    key_c = @as(u8, @intCast(key));
+                }
             },
             c.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED => {
                 const w = event.window.data1;
@@ -58,11 +63,15 @@ pub fn get_event() ui.event_output {
             },
             c.SDL_EVENT_KEY_DOWN => {
                 const key = event.key.key;    
-                if( key > 255 ) {}
-                else if( @as(u8, @intCast(key)) >= ' ' and @as(u8, @intCast(key)) <= '~') {
-                    key_c = @as(u8, @intCast(key));
-                } else if( key == c.SDLK_BACKSPACE ) {
+                if( key == c.SDLK_BACKSPACE ) {
                     input = ui.events.Delete;
+                }
+            },
+            c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
+                if( event.button.button == c.SDL_BUTTON_LEFT ) {
+                    input = ui.events.LeftClick;
+                } else if( event.button.button == c.SDL_BUTTON_RIGHT ) {
+                    input = ui.events.RightClick;
                 }
             },
             else => {},
@@ -143,14 +152,6 @@ pub fn draw_rect(rect: @Vector(4, f32), color: @Vector(4, f32)) [4]c.SDL_Vertex 
 }
 
 pub fn main(std_process_init: std.process.Init) !void {
-    // try run_process(std_process_init);
-
-    const config = std.Thread.SpawnConfig{
-        .allocator = std_process_init.gpa,
-    };
-
-    _ = try std.Thread.spawn(config, run_process, .{std_process_init});
-
     if (!c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY)) {
         std.debug.print("SDL_Init failed: {s}\n", .{c.SDL_GetError()});
         return error.SDLInitFailed;
@@ -170,6 +171,8 @@ pub fn main(std_process_init: std.process.Init) !void {
         return error.RendererCreationFailed;
     }
     defer c.SDL_DestroyRenderer(renderer);
+
+    _ = c.SDL_StartTextInput(window);
 
     if (!c.TTF_Init()) {
         std.debug.print("SDL_TTF_INIT failed: {s}\n", .{c.SDL_GetError()});
@@ -194,8 +197,10 @@ pub fn main(std_process_init: std.process.Init) !void {
     ui_context.get_text_height = get_text_height;
     ui_context.get_text_size = get_text_size;
 
-    var textbox : [256]u8 = [_]u8{0} ** 256;
-    @memcpy(textbox[0..20], "This in an input box");
+    var yamcs_args : [256]u8 = [_]u8{0} ** 256;
+    @memcpy(yamcs_args[0..20], "This in an input box");
+    var middleware_args : [256]u8 = [_]u8{0} ** 256;
+    @memcpy(middleware_args[0..39], "Middleware arguments (--help supported)");
 
     // To use the functions you have to first cast your type:
     // var TextObj : TTF_Text;
@@ -228,15 +233,58 @@ pub fn main(std_process_init: std.process.Init) !void {
 
         _ = ui_context.window_begin("Hello Window", ui.rect.init(10, 10, @as(f32, @floatFromInt(w)) - 20, @as(f32, @floatFromInt(h)) - 20), ui.layout_options{.NONE=true});
 
-        if (ui_context.button("Execute Yamcs", ui.rect.init(15, 10, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {}
+        if (ui_context.button(
+                "Execute Yamcs", 
+                ui.rect.init(15, 10, 200, 30), 
+                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
+                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
+        ) {
+            ui_context.set_focus();
+            const yamc_config = std.Thread.SpawnConfig{
+                .allocator = std_process_init.gpa,
+            };
 
-        if (ui_context.button("Execute Middleware", ui.rect.init(15, 45, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {}
+            var yamcs_command = [_][]const u8{ "mvn", "yamcs:run" };
+            _ = try std.Thread.spawn(yamc_config, run_process, .{std_process_init, &yamcs_command, "/home/polaris/devel/ucanfly_cubesat/OPS/MissionControlFrontend/YAMCS"});
+        }
+        if (ui_context.button(
+                "Execute Middleware", 
+                ui.rect.init(15, 45, 200, 30), 
+                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
+                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
+        ) {
+            ui_context.set_focus();
+            const mid_config = std.Thread.SpawnConfig{
+                .allocator = std_process_init.gpa,
+            };
 
-        if (ui_context.button("Execute Grafana", ui.rect.init(15, 80, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {}
+            var mid_command = [_][]const u8{ "./ucf_gs_csp", "--gui" };
+            _ = try std.Thread.spawn(mid_config, run_process, .{std_process_init, &mid_command, "/home/polaris/devel/ucanfly_cubesat/OPS/csp_client_gnu_radio/ucf_gs_csp/"});
+        }
 
-        if (ui_context.button("Execute GNU Radio", ui.rect.init(15, 115, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {}
+        if (ui_context.button(
+                "Execute Grafana", 
+                ui.rect.init(15, 80, 200, 30), 
+                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
+                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
+        ) {}
 
-        if( ui_context.textbox(&textbox, ui.rect.init(15, 150, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {
+        if (ui_context.button(
+                "Execute GNU Radio", 
+                ui.rect.init(15, 115, 200, 30), 
+                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
+                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
+        ) {
+            const gnu_radio_config = std.Thread.SpawnConfig{
+                .allocator = std_process_init.gpa,
+            };
+            // @todo: this does not work because it does not let you execute more than one command like this
+            // @fix
+            var gnu_radio_command = [_][]const u8{ "conda", "activate", "&&", "gnuradio-companion" };
+            _ = try std.Thread.spawn(gnu_radio_config, run_process, .{std_process_init, &gnu_radio_command, "/home/polaris/devel/ucanfly_cubesat/OPS/"});
+        }
+
+        if( ui_context.textbox(&middleware_args, ui.rect.init(15, 150, @as(f32, @floatFromInt(w)) - 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {
             ui_context.set_focus();
         }
         ui_context.window_end();
@@ -244,33 +292,61 @@ pub fn main(std_process_init: std.process.Init) !void {
         const boxes = ui_context.end();
 
         for (boxes) |it_box| {
-            const bound = @Vector(4, f32){ it_box.bounds.x, it_box.bounds.y, it_box.bounds.w, it_box.bounds.h };
-            const verts = draw_rect(bound, it_box.color);
-            const idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
-            const message = it_box.id;
-            const text_obj = c.TTF_CreateText(text_engine, font, @ptrCast(message.ptr), @intCast(message.len)) orelse return error.TextCreate;
-            defer c.TTF_DestroyText(text_obj);
+            if(it_box.options.DRAW_BORDER) {
+                const bound = @Vector(4, f32){ it_box.bounds.x, it_box.bounds.y, it_box.bounds.w, it_box.bounds.h };
+                const color = @Vector(4, f32){it_box.color[0] * 1.3, it_box.color[1], it_box.color[2], it_box.color[3]};
+                const verts = draw_rect(bound, color);
+                const idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
-            // 1. Get text dimensions (in pixels)
-            var text_w: c_int = 0;
-            var text_h: c_int = 0;
-            _ = c.TTF_GetTextSize(text_obj, &text_w, &text_h);
+                if (!c.SDL_RenderGeometry(renderer, null, &verts[0], 4, &idx[0], 6)) {
+                    std.debug.print("RenderGeometry failed: {s}\n", .{c.SDL_GetError()});
+                }
+            }
+            if(it_box.options.DRAW_RECT) {
+                var border_padding : f32 = 0;
+                if(it_box.options.DRAW_BORDER) {
+                    border_padding = 2;
+                }
+                const bound = @Vector(4, f32){ it_box.bounds.x + border_padding, it_box.bounds.y + border_padding, it_box.bounds.w - 2*border_padding, it_box.bounds.h - 2*border_padding };
+                const verts = draw_rect(bound, it_box.color);
+                const idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
-            if (!c.SDL_RenderGeometry(renderer, null, &verts[0], 4, &idx[0], 6)) {
-                std.debug.print("RenderGeometry failed: {s}\n", .{c.SDL_GetError()});
+                if (!c.SDL_RenderGeometry(renderer, null, &verts[0], 4, &idx[0], 6)) {
+                    std.debug.print("RenderGeometry failed: {s}\n", .{c.SDL_GetError()});
+                }
             }
 
-            // 2. Compute center position
-            // bound = [x, y, w, h]
-            const center_x = bound[0] + 5; //bound[0] + (bound[2] - @as(f32, @floatFromInt(text_w))) / 2.0;
-            const center_y = bound[1] + (bound[3] - @as(f32, @floatFromInt(text_h))) / 2.0;
+            if( it_box.options.DRAW_TEXT ) {
+                const bound = @Vector(4, f32){ it_box.bounds.x + 2, it_box.bounds.y + 2, it_box.bounds.w - 4, it_box.bounds.h - 4 };
+                const message = it_box.id;
+                const text_obj = c.TTF_CreateText(text_engine, font, @ptrCast(message.ptr), @intCast(message.len)) orelse return error.TextCreate;
+                defer c.TTF_DestroyText(text_obj);
 
-            // 3. Draw at center (pass renderer)
-            _ = c.TTF_DrawRendererText(text_obj, center_x, center_y);
+                var text_w: c_int = 0;
+                var text_h: c_int = 0;
+                _ = c.TTF_GetTextSize(text_obj, &text_w, &text_h);
+
+                // bound = [x, y, w, h]
+                const center_x = bound[0] + 5; //bound[0] + (bound[2] - @as(f32, @floatFromInt(text_w))) / 2.0;
+                const center_y = bound[1] + (bound[3] - @as(f32, @floatFromInt(text_h))) / 2.0;
+
+                // 3. Draw at center (pass renderer)
+                _ = c.TTF_DrawRendererText(text_obj, center_x, center_y);
+
+                if( it_box.options.INPUT_TEXT ) {
+                    const _bound = @Vector(4, f32){ it_box.bounds.x + @as(f32, @floatFromInt(text_w)) + 5, it_box.bounds.y + 2, 10, it_box.bounds.h - 4 };
+                    const _verts = draw_rect(_bound, @Vector(4, f32){0.1, 0.2, 0.1, 0.5});
+                    const _idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
+
+                    if (!c.SDL_RenderGeometry(renderer, null, &_verts[0], 4, &_idx[0], 6)) {
+                        std.debug.print("RenderGeometry failed: {s}\n", .{c.SDL_GetError()});
+                    }
+                }
+            }
         }
         _ = c.SDL_RenderPresent(renderer);
 
-        c.SDL_Delay(16);
+        c.SDL_Delay(8);
     }
 }
