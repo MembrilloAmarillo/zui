@@ -133,6 +133,7 @@ pub const events = enum(u32) {
 	Delete,
 	ScrollUp,
 	ScrollDown,
+	Enter,
 	Quit
 };
 
@@ -250,6 +251,17 @@ pub const context = struct {
 		self.cursor_pos = pos;
 	}
 
+	pub fn push_rect(self: *context, bound: rect, color: @Vector(4, f32)) void {
+		const new_box = box{
+			.id = "rect",
+			.bounds = bound,
+			.color  = color,
+			.options = layout_options{.DRAW_RECT=true},
+		};
+
+		self.boxes.push(new_box);
+	}
+
 	pub fn button(self: *context, id : []const u8, bound : rect, color : @Vector(4, f32), options : layout_options) events {
 		var input : events = events.NoEvent;
 
@@ -271,6 +283,26 @@ pub const context = struct {
 
 		self.boxes.push(new_box);
 
+		return input;
+	}
+
+	pub fn label(self: *context, id : []const u8, bound : rect, color : @Vector(4, f32), options : layout_options) events {
+		var input : events = events.NoEvent;
+
+		var new_box = box{
+			.id = id,
+			.bounds = bound,
+			.color  = color,
+			.options = options,
+		};
+
+		new_box.options.DRAW_TEXT = true;
+
+		self.boxes.push(new_box);
+
+		if( self.is_cursor_over(new_box.bounds) or self.boxes.get_front() == self.focus_box) {
+			input = self.current_event.event;
+		}
 		return input;
 	}
 
@@ -313,8 +345,59 @@ pub const context = struct {
 	                id[current_len] = 0; // Null-terminate at the new position
 	            }
 			}
+
+			if( input == events.LeftClick ) {
+				self.set_focus();
+			}
 		}
 
 		return input;
 	}
+
+	pub fn checkbox(self: *context, id : []const u8, bound : rect, color : @Vector(4, f32), check_confirm : *bool) events {
+		var input : events = events.NoEvent;
+
+		const new_box = box{
+			.id = id,
+			.bounds = bound,
+			.color  = color,
+			.options = layout_options{.DRAW_RECT = true},
+		};
+
+		// new_box.options.DRAW_RECT = true;
+
+		self.boxes.push(new_box);
+
+		if( self.is_cursor_over(new_box.bounds) or check_confirm.* ) {
+
+			var checked_bound = bound;
+			checked_bound.x += 2;
+			checked_bound.w -= 4;
+			checked_bound.y += 2;
+			checked_bound.h -= 4;
+
+			var inn_box = box{
+				.id = id,
+				.bounds = checked_bound,
+				.color  = @Vector(4, f32){0.1, 0.25, 0.1, 1.0},
+				.options = layout_options{.DRAW_RECT = true},
+			};
+
+			inn_box.color[1] += 0.1;
+
+			self.boxes.push(inn_box);
+
+			input = self.current_event.event;
+
+			if( self.is_cursor_over(new_box.bounds) and input == events.LeftClick ) {
+				check_confirm.* = !check_confirm.*;
+			}
+		}
+
+		return input;
+	}
+
+	//pub fn begin_scrollview(self: *context) void {}
+
+	//pub fn end_scrollview(self: *context) void {}
 }; 

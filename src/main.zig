@@ -19,6 +19,10 @@ pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, direc
 
     //const argv = [_][]const u8{ "ls", "-la", "./" };
 
+    for(argv) |item| {
+        std.debug.print("Arguments: {s}\n", .{item});
+    }
+
     const result = try std.process.run(allocator, io, .{
         .argv = argv,
         .max_output_bytes = 1024 * 1024,
@@ -65,6 +69,8 @@ pub fn get_event() ui.event_output {
                 const key = event.key.key;    
                 if( key == c.SDLK_BACKSPACE ) {
                     input = ui.events.Delete;
+                } else if( key == c.SDLK_RETURN ) {
+                    input = ui.events.Enter;
                 }
             },
             c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
@@ -152,6 +158,11 @@ pub fn draw_rect(rect: @Vector(4, f32), color: @Vector(4, f32)) [4]c.SDL_Vertex 
 }
 
 pub fn main(std_process_init: std.process.Init) !void {
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     if (!c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY)) {
         std.debug.print("SDL_Init failed: {s}\n", .{c.SDL_GetError()});
         return error.SDLInitFailed;
@@ -201,6 +212,16 @@ pub fn main(std_process_init: std.process.Init) !void {
     @memcpy(yamcs_args[0..20], "This in an input box");
     var middleware_args : [256]u8 = [_]u8{0} ** 256;
     @memcpy(middleware_args[0..39], "Middleware arguments (--help supported)");
+
+    var enable_yamcs : bool = false;
+    var enable_gui   : bool = false;
+    var enable_can   : bool = false;
+    var enable_route : bool = false;
+
+    var show_route_help : bool = false;
+
+    var mid_command = std.array_list.Managed([]const u8).init(allocator);//: std.array_list.Aligned([]const u8, std.mem.Alignment.@"64") = .empty;
+    defer mid_command.deinit();
 
     // To use the functions you have to first cast your type:
     // var TextObj : TTF_Text;
@@ -258,8 +279,27 @@ pub fn main(std_process_init: std.process.Init) !void {
                 .allocator = std_process_init.gpa,
             };
 
-            var mid_command = [_][]const u8{ "./ucf_gs_csp", "--gui" };
-            _ = try std.Thread.spawn(mid_config, run_process, .{std_process_init, &mid_command, "/home/polaris/devel/ucanfly_cubesat/OPS/csp_client_gnu_radio/ucf_gs_csp/"});
+            // Append your initial strings
+            try mid_command.append("./ucf_gs_csp");
+            if( enable_gui ) {
+                try mid_command.append("--gui");
+            }
+            if( enable_yamcs ) {
+                try mid_command.append("--udp-enable");
+            }
+            if( enable_can ) {
+                try mid_command.append("--can-enable");
+            }
+            if( enable_route ) {
+                try mid_command.append("--set-route");
+                try mid_command.append(middleware_args[0..middleware_args.len]);
+            }
+
+            for (mid_command.items) |item| {
+                std.debug.print("mid_command: {s}\n", .{item});
+            }
+
+            _ = try std.Thread.spawn(mid_config, run_process, .{std_process_init, mid_command.items, "/home/polaris/devel/ucanfly_cubesat/OPS/csp_client_gnu_radio/ucf_gs_csp/"});
         }
 
         if (ui_context.button(
@@ -280,13 +320,45 @@ pub fn main(std_process_init: std.process.Init) !void {
             };
             // @todo: this does not work because it does not let you execute more than one command like this
             // @fix
-            var gnu_radio_command = [_][]const u8{ "conda", "activate", "&&", "gnuradio-companion" };
+            var gnu_radio_command = [_][]const u8{
+                "conda", 
+                "run", 
+                "-n", "base",           // base environment is the default base on radioconda
+                "--no-capture-output",  // Show output directly
+                "gnuradio-companion" 
+            };
             _ = try std.Thread.spawn(gnu_radio_config, run_process, .{std_process_init, &gnu_radio_command, "/home/polaris/devel/ucanfly_cubesat/OPS/"});
         }
 
-        if( ui_context.textbox(&middleware_args, ui.rect.init(15, 150, @as(f32, @floatFromInt(w)) - 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.LeftClick) {
+        ui_context.push_rect(ui.rect.init(15, 150, @as(f32, @floatFromInt(w)) - 30, 5), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 });
+
+        _ = ui_context.label("CSP Route", ui.rect.init(15, 160, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
+        if( ui_context.textbox(&middleware_args, ui.rect.init(220, 160, @as(f32, @floatFromInt(w)) - 235, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.Enter) {
             ui_context.set_focus();
+            enable_route = true;
+            var current_len: usize = 0;
+            while (current_len < middleware_args.len and middleware_args[current_len] != 0) : (current_len += 1) {}
+            if( std.mem.eql(u8, middleware_args[0..current_len], "--help") ) {
+                show_route_help = true;
+            }
         }
+
+        _ = ui_context.checkbox("Connect to YAMCS", ui.rect.init(15, 200, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_yamcs);
+        _ = ui_context.label("Connect to YAMCS", ui.rect.init(45, 200, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
+        _ = ui_context.checkbox("Enable CAN Iface", ui.rect.init(15, 235, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_can);
+        _ = ui_context.label("Enable CAN Iface", ui.rect.init(45, 235, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
+        _ = ui_context.checkbox("Enable GUI", ui.rect.init(15, 270, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_gui);
+        _ = ui_context.label("Enable GUI", ui.rect.init(45, 270, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
+
+        if( show_route_help ) {
+            _ = ui_context.label(
+                "ROUTE HELP:\n \"1/0 ZMQHUB, 5/0 ZMQHUB\" \n \"1/0 CAN, 5/0 CAN\"", 
+                ui.rect.init(15, 340, 200, 30), 
+                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
+                ui.layout_options{}
+            );
+        }
+
         ui_context.window_end();
 
         const boxes = ui_context.end();
@@ -335,7 +407,7 @@ pub fn main(std_process_init: std.process.Init) !void {
                 _ = c.TTF_DrawRendererText(text_obj, center_x, center_y);
 
                 if( it_box.options.INPUT_TEXT ) {
-                    const _bound = @Vector(4, f32){ it_box.bounds.x + @as(f32, @floatFromInt(text_w)) + 5, it_box.bounds.y + 2, 10, it_box.bounds.h - 4 };
+                    const _bound = @Vector(4, f32){ center_x + @as(f32, @floatFromInt(text_w)), bound[1], 10, bound[3] };
                     const _verts = draw_rect(_bound, @Vector(4, f32){0.1, 0.2, 0.1, 0.5});
                     const _idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
