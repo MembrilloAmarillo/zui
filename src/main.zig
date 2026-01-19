@@ -9,7 +9,16 @@ const ui = @import("ui.zig");
 var font: ?*c.TTF_Font = null;
 var text_engine: ?*c.TTF_TextEngine = null;
 
-pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, directory: []const u8) !void {
+const task_info = struct {
+    done: std.atomic.Value(bool),
+
+    stdout: ?[]const u8 = null,
+    stderr: ?[]const u8 = null,
+
+    term: ?std.process.Child.Term = null,
+};
+
+pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, directory: []const u8, task: *task_info) !void {
     const SystemMemory = std.process.totalSystemMemory() catch std.math.maxInt(u64);
 
     std.debug.print("Total System Memory: {}\n", .{SystemMemory >> 30});
@@ -31,8 +40,12 @@ pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, direc
 
     std.debug.print("Result: {}\n", .{result});
 
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
+    task.stdout = result.stdout;
+    task.stderr = result.stderr;
+    task.term   = result.term;
+
+    //defer allocator.free(result.stdout);
+    //defer allocator.free(result.stderr);
 
     std.debug.print("Exit Status: {any}\n", .{result.term});
     std.debug.print("--- STDOUT ---\n{s}\n", .{result.stdout});
@@ -40,9 +53,38 @@ pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, direc
     if (result.stderr.len > 0) {
         std.debug.print("--- STDERR ---\n{s}\n", .{result.stderr});
     }
+
+    //_ = task.done.fetchSet(true, .monotonic);
+    std.debug.print("Process finished, data ready.\n", .{});
 }
 
-// @todo: Implement left click
+fn on_folder_dialogue_callback(
+    userdata: ?*anyopaque,                // SDL_DialogFileContext userdata
+    file_list: [*c]const [*c]const u8,    // The list of selected paths (char**)
+    nfilters: c_int                       // Number of filters (usually -1 for errors)
+) callconv(.c) void {
+    _ = nfilters;
+
+    if (file_list[0] != null) {
+        const src_path = std.mem.span(file_list[0]);
+
+        std.debug.print("Folder selected: {s}\n", .{src_path});
+
+        // Cast userdata back to a pointer to your array type
+        var dest_buffer: *[256]u8 = @ptrCast(@alignCast(userdata));
+
+        // Calculate how much we can copy safely
+        const copy_len = @min(src_path.len, dest_buffer.len - 1);
+
+        // Perform the copy using a temp slice
+        @memcpy(dest_buffer[0..copy_len], src_path[0..copy_len]);
+
+        // Null-terminate the result (safety)
+        dest_buffer[copy_len] = 0;
+    }
+}
+
+
 pub fn get_event() ui.event_output {
     var input = ui.events.NoEvent;
     var event: c.SDL_Event = undefined;
@@ -163,13 +205,15 @@ pub fn main(std_process_init: std.process.Init) !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    var default_folder : [256] u8 = [_]u8{0} ** 256;
+
     if (!c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY)) {
         std.debug.print("SDL_Init failed: {s}\n", .{c.SDL_GetError()});
         return error.SDLInitFailed;
     }
     defer c.SDL_Quit();
 
-    const window = c.SDL_CreateWindow("Spinning Square", 800, 600, c.SDL_WINDOW_RESIZABLE);
+    const window = c.SDL_CreateWindow("Sascha Launcher", 800, 600, c.SDL_WINDOW_RESIZABLE);
     if (window == null) {
         std.debug.print("SDL_CreateWindow failed: {s}\n", .{c.SDL_GetError()});
         return error.WindowCreationFailed;
@@ -223,6 +267,25 @@ pub fn main(std_process_init: std.process.Init) !void {
     var mid_command = std.array_list.Managed([]const u8).init(allocator);//: std.array_list.Aligned([]const u8, std.mem.Alignment.@"64") = .empty;
     defer mid_command.deinit();
 
+    var middleware_path = std.array_list.Managed(u8).init(allocator);
+    defer middleware_path.deinit();
+
+    var gnuradio_path = std.array_list.Managed(u8).init(allocator);
+    defer gnuradio_path.deinit();
+
+    var yamcs_path = std.array_list.Managed(u8).init(allocator);
+    defer yamcs_path.deinit();
+
+    var yamcs_info = task_info {
+        .done = std.atomic.Value(bool).init(false),
+    };
+    var middleware_info = task_info {
+        .done = std.atomic.Value(bool).init(false),
+    };
+    var gnuradio_info = task_info {
+        .done = std.atomic.Value(bool).init(false),
+    };
+
     // To use the functions you have to first cast your type:
     // var TextObj : TTF_Text;
     // var font_handle: *ui.Font = @ptrCast(*ui.Font, &TextObj);
@@ -237,7 +300,7 @@ pub fn main(std_process_init: std.process.Init) !void {
         _ = c.SDL_GetMouseState(&mouse_x, &mouse_y);
 
         // Clear screen
-        _ = c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        _ = c.SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
         _ = c.SDL_RenderClear(renderer);
 
         _ = c.SDL_GetRenderOutputSize(renderer, &w, &h);
@@ -252,7 +315,7 @@ pub fn main(std_process_init: std.process.Init) !void {
 
         ui_context.begin();
 
-        _ = ui_context.window_begin("Hello Window", ui.rect.init(10, 10, @as(f32, @floatFromInt(w)) - 20, @as(f32, @floatFromInt(h)) - 20), ui.layout_options{.NONE=true});
+        _ = ui_context.window_begin("Suite", ui.rect.init(10, 10, @as(f32, @floatFromInt(w)) - 20, @as(f32, @floatFromInt(h)) - 20), ui.layout_options{.NONE=true});
 
         if (ui_context.button(
                 "Execute Yamcs", 
@@ -265,8 +328,19 @@ pub fn main(std_process_init: std.process.Init) !void {
                 .allocator = std_process_init.gpa,
             };
 
+            if( default_folder[0] != 0 ) {
+                var current_len : usize = 0;
+                while(default_folder[current_len] != 0) { current_len += 1; }
+                try yamcs_path.appendSlice(default_folder[0..current_len]);
+                try yamcs_path.appendSlice("/MissionControlFrontend/YAMCS");
+            }
+
+            std.debug.print("Path: {s}\n", .{yamcs_path.items});
+
+            yamcs_path.clearRetainingCapacity();
+
             var yamcs_command = [_][]const u8{ "mvn", "yamcs:run" };
-            _ = try std.Thread.spawn(yamc_config, run_process, .{std_process_init, &yamcs_command, "/home/polaris/devel/ucanfly_cubesat/OPS/MissionControlFrontend/YAMCS"});
+            _ = try std.Thread.spawn(yamc_config, run_process, .{std_process_init, &yamcs_command, yamcs_path.items, &yamcs_info});
         }
         if (ui_context.button(
                 "Execute Middleware", 
@@ -278,6 +352,17 @@ pub fn main(std_process_init: std.process.Init) !void {
             const mid_config = std.Thread.SpawnConfig{
                 .allocator = std_process_init.gpa,
             };
+
+            if( default_folder[0] != 0 ) {
+                var current_len : usize = 0;
+                while(default_folder[current_len] != 0) { current_len += 1; }
+                try middleware_path.appendSlice(default_folder[0..current_len]);
+                try middleware_path.appendSlice("/csp_client_gnu_radio/ucf_gs_csp/");
+            }
+
+            std.debug.print("Path: {s}\n", .{middleware_path.items});
+
+            middleware_path.clearRetainingCapacity();
 
             // Append your initial strings
             try mid_command.append("./ucf_gs_csp");
@@ -299,7 +384,7 @@ pub fn main(std_process_init: std.process.Init) !void {
                 std.debug.print("mid_command: {s}\n", .{item});
             }
 
-            _ = try std.Thread.spawn(mid_config, run_process, .{std_process_init, mid_command.items, "/home/polaris/devel/ucanfly_cubesat/OPS/csp_client_gnu_radio/ucf_gs_csp/"});
+            _ = try std.Thread.spawn(mid_config, run_process, .{std_process_init, mid_command.items, middleware_path.items, &middleware_info});
         }
 
         if (ui_context.button(
@@ -318,6 +403,18 @@ pub fn main(std_process_init: std.process.Init) !void {
             const gnu_radio_config = std.Thread.SpawnConfig{
                 .allocator = std_process_init.gpa,
             };
+
+            if( default_folder[0] != 0 ) {
+                var current_len : usize = 0;
+                while(default_folder[current_len] != 0) { current_len += 1; }
+                try gnuradio_path.appendSlice(default_folder[0..current_len]);
+                try gnuradio_path.appendSlice("/../COMMS/gnu_radio_ucf/CurrentFlowgraph/");
+            }
+
+            std.debug.print("Path: {s}\n", .{gnuradio_path.items});
+
+            gnuradio_path.clearRetainingCapacity();
+
             // @todo: this does not work because it does not let you execute more than one command like this
             // @fix
             var gnu_radio_command = [_][]const u8{
@@ -327,7 +424,7 @@ pub fn main(std_process_init: std.process.Init) !void {
                 "--no-capture-output",  // Show output directly
                 "gnuradio-companion" 
             };
-            _ = try std.Thread.spawn(gnu_radio_config, run_process, .{std_process_init, &gnu_radio_command, "/home/polaris/devel/ucanfly_cubesat/OPS/"});
+            _ = try std.Thread.spawn(gnu_radio_config, run_process, .{std_process_init, &gnu_radio_command, gnuradio_path.items, &gnuradio_info});
         }
 
         ui_context.push_rect(ui.rect.init(15, 150, @as(f32, @floatFromInt(w)) - 30, 5), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 });
@@ -350,10 +447,14 @@ pub fn main(std_process_init: std.process.Init) !void {
         _ = ui_context.checkbox("Enable GUI", ui.rect.init(15, 270, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_gui);
         _ = ui_context.label("Enable GUI", ui.rect.init(45, 270, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
 
+        if( ui_context.button("Select UCAnFly OPS folder", ui.rect.init(15, 305, 250, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick) {
+            c.SDL_ShowOpenFolderDialog(on_folder_dialogue_callback, &default_folder, window, "/home", false);
+        }
+
         if( show_route_help ) {
             _ = ui_context.label(
                 "ROUTE HELP:\n \"1/0 ZMQHUB, 5/0 ZMQHUB\" \n \"1/0 CAN, 5/0 CAN\"", 
-                ui.rect.init(15, 340, 200, 30), 
+                ui.rect.init(15, 370, 200, 30), 
                 @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
                 ui.layout_options{}
             );
