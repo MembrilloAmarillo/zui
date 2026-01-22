@@ -5,6 +5,7 @@ const c = @cImport({
 });
 
 const ui = @import("ui.zig");
+const anim = @import("animation.zig");
 
 var font: ?*c.TTF_Font = null;
 var text_engine: ?*c.TTF_TextEngine = null;
@@ -28,21 +29,17 @@ pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, direc
 
     //const argv = [_][]const u8{ "ls", "-la", "./" };
 
-    for(argv) |item| {
+    for (argv) |item| {
         std.debug.print("Arguments: {s}\n", .{item});
     }
 
-    const result = try std.process.run(allocator, io, .{
-        .argv = argv,
-        .max_output_bytes = 1024 * 1024,
-        .cwd = directory
-    });
+    const result = try std.process.run(allocator, io, .{ .argv = argv, .max_output_bytes = 1024 * 1024, .cwd = directory });
 
     std.debug.print("Result: {}\n", .{result});
 
     task.stdout = result.stdout;
     task.stderr = result.stderr;
-    task.term   = result.term;
+    task.term = result.term;
 
     //defer allocator.free(result.stdout);
     //defer allocator.free(result.stderr);
@@ -59,9 +56,9 @@ pub fn run_process(std_process_init: std.process.Init, argv: [][]const u8, direc
 }
 
 fn on_folder_dialogue_callback(
-    userdata: ?*anyopaque,                // SDL_DialogFileContext userdata
-    file_list: [*c]const [*c]const u8,    // The list of selected paths (char**)
-    nfilters: c_int                       // Number of filters (usually -1 for errors)
+    userdata: ?*anyopaque, // SDL_DialogFileContext userdata
+    file_list: [*c]const [*c]const u8, // The list of selected paths (char**)
+    nfilters: c_int, // Number of filters (usually -1 for errors)
 ) callconv(.c) void {
     _ = nfilters;
 
@@ -84,11 +81,10 @@ fn on_folder_dialogue_callback(
     }
 }
 
-
 pub fn get_event() ui.event_output {
     var input = ui.events.NoEvent;
     var event: c.SDL_Event = undefined;
-    var key_c : u8 = 0;
+    var key_c: u8 = 0;
     while (c.SDL_PollEvent(&event)) {
         switch (event.type) {
             c.SDL_EVENT_QUIT => {
@@ -96,29 +92,28 @@ pub fn get_event() ui.event_output {
             },
             c.SDL_EVENT_TEXT_INPUT => {
                 const text = event.text.text;
-                const key = text[0];    
-                if( key > 255 ) {}
-                else if( @as(u8, @intCast(key)) >= ' ' and @as(u8, @intCast(key)) <= '~') {
+                const key = text[0];
+                if (key > 255) {} else if (@as(u8, @intCast(key)) >= ' ' and @as(u8, @intCast(key)) <= '~') {
                     key_c = @as(u8, @intCast(key));
                 }
             },
             c.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED => {
                 const w = event.window.data1;
                 const h = event.window.data2;
-                std.debug.print("Window resize {} {}\n", .{w, h});
+                std.debug.print("Window resize {} {}\n", .{ w, h });
             },
             c.SDL_EVENT_KEY_DOWN => {
-                const key = event.key.key;    
-                if( key == c.SDLK_BACKSPACE ) {
+                const key = event.key.key;
+                if (key == c.SDLK_BACKSPACE) {
                     input = ui.events.Delete;
-                } else if( key == c.SDLK_RETURN ) {
+                } else if (key == c.SDLK_RETURN) {
                     input = ui.events.Enter;
                 }
             },
             c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
-                if( event.button.button == c.SDL_BUTTON_LEFT ) {
+                if (event.button.button == c.SDL_BUTTON_LEFT) {
                     input = ui.events.LeftClick;
-                } else if( event.button.button == c.SDL_BUTTON_RIGHT ) {
+                } else if (event.button.button == c.SDL_BUTTON_RIGHT) {
                     input = ui.events.RightClick;
                 }
             },
@@ -126,7 +121,7 @@ pub fn get_event() ui.event_output {
         }
     }
 
-    return ui.event_output{.event = input, .key = key_c};
+    return ui.event_output{ .event = input, .key = key_c };
 }
 
 // const message = it_box.id;
@@ -200,12 +195,12 @@ pub fn draw_rect(rect: @Vector(4, f32), color: @Vector(4, f32)) [4]c.SDL_Vertex 
 }
 
 pub fn main(std_process_init: std.process.Init) !void {
-
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var default_folder : [256] u8 = [_]u8{0} ** 256;
+    var default_folder: [256]u8 = [_]u8{0} ** 256;
+    @memcpy(default_folder[0..39], "/home/polaris/devel/ucanfly_cubesat/OPS");
 
     if (!c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY)) {
         std.debug.print("SDL_Init failed: {s}\n", .{c.SDL_GetError()});
@@ -213,7 +208,7 @@ pub fn main(std_process_init: std.process.Init) !void {
     }
     defer c.SDL_Quit();
 
-    const window = c.SDL_CreateWindow("Sascha Launcher", 800, 600, c.SDL_WINDOW_RESIZABLE);
+    const window = c.SDL_CreateWindow("Sascha Launcher", 630, 450, c.SDL_WINDOW_RESIZABLE);
     if (window == null) {
         std.debug.print("SDL_CreateWindow failed: {s}\n", .{c.SDL_GetError()});
         return error.WindowCreationFailed;
@@ -252,19 +247,19 @@ pub fn main(std_process_init: std.process.Init) !void {
     ui_context.get_text_height = get_text_height;
     ui_context.get_text_size = get_text_size;
 
-    var yamcs_args : [256]u8 = [_]u8{0} ** 256;
+    var yamcs_args: [256]u8 = [_]u8{0} ** 256;
     @memcpy(yamcs_args[0..20], "This in an input box");
-    var middleware_args : [256]u8 = [_]u8{0} ** 256;
+    var middleware_args: [256]u8 = [_]u8{0} ** 256;
     @memcpy(middleware_args[0..39], "Middleware arguments (--help supported)");
 
-    var enable_yamcs : bool = false;
-    var enable_gui   : bool = false;
-    var enable_can   : bool = false;
-    var enable_route : bool = false;
+    var enable_yamcs: bool = false;
+    var enable_gui: bool = false;
+    var enable_can: bool = false;
+    var enable_route: bool = false;
 
-    var show_route_help : bool = false;
+    var show_route_help: bool = false;
 
-    var mid_command = std.array_list.Managed([]const u8).init(allocator);//: std.array_list.Aligned([]const u8, std.mem.Alignment.@"64") = .empty;
+    var mid_command = std.array_list.Managed(u8).init(allocator); //: std.array_list.Aligned([]const u8, std.mem.Alignment.@"64") = .empty;
     defer mid_command.deinit();
 
     var middleware_path = std.array_list.Managed(u8).init(allocator);
@@ -276,13 +271,13 @@ pub fn main(std_process_init: std.process.Init) !void {
     var yamcs_path = std.array_list.Managed(u8).init(allocator);
     defer yamcs_path.deinit();
 
-    var yamcs_info = task_info {
+    var yamcs_info = task_info{
         .done = std.atomic.Value(bool).init(false),
     };
-    var middleware_info = task_info {
+    var middleware_info = task_info{
         .done = std.atomic.Value(bool).init(false),
     };
-    var gnuradio_info = task_info {
+    var gnuradio_info = task_info{
         .done = std.atomic.Value(bool).init(false),
     };
 
@@ -290,13 +285,25 @@ pub fn main(std_process_init: std.process.Init) !void {
     // var TextObj : TTF_Text;
     // var font_handle: *ui.Font = @ptrCast(*ui.Font, &TextObj);
 
+    var animation_hash: std.StringHashMap(f64) = .init(allocator);
+
+    defer animation_hash.deinit();
     var quit = false;
+    var dt: f32 = 0;
     while (!quit) {
+        var frame_time = try std.time.Timer.start();
+        defer {
+            const end_time = std.time.Timer.read(&frame_time);
+            dt = @as(f32, @floatFromInt(end_time)) * 10e-9;
+
+            anim.animation_update_all(dt);
+        }
+
         var w: i32 = 0;
         var h: i32 = 0;
 
-        var mouse_x : f32 = 0;
-        var mouse_y : f32 = 0;
+        var mouse_x: f32 = 0;
+        var mouse_y: f32 = 0;
         _ = c.SDL_GetMouseState(&mouse_x, &mouse_y);
 
         // Clear screen
@@ -315,149 +322,203 @@ pub fn main(std_process_init: std.process.Init) !void {
 
         ui_context.begin();
 
-        _ = ui_context.window_begin("Suite", ui.rect.init(10, 10, @as(f32, @floatFromInt(w)) - 20, @as(f32, @floatFromInt(h)) - 20), ui.layout_options{.NONE=true});
+        _ = ui_context.window_begin("Suite", ui.rect.init(10, 10, @as(f32, @floatFromInt(w)) - 20, @as(f32, @floatFromInt(h)) - 20), ui.layout_options{ .NONE = true });
 
-        if (ui_context.button(
-                "Execute Yamcs", 
-                ui.rect.init(15, 10, 200, 30), 
-                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
-                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
-        ) {
+        if (ui_context.button("Execute Yamcs", ui.rect.init(15, 10, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{ .DRAW_RECT = true, .DRAW_BORDER = true }) == ui.events.LeftClick) {
+            //const id = std.hash.XxHash64.hash(7, "Execute Yamcs");
+            if (animation_hash.getPtr("Execute Yamcs")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Execute Yamcs", 1.0);
+                if (animation_hash.getPtr("Execute Yamcs")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
             ui_context.set_focus();
             const yamc_config = std.Thread.SpawnConfig{
                 .allocator = std_process_init.gpa,
             };
 
-            if( default_folder[0] != 0 ) {
-                var current_len : usize = 0;
-                while(default_folder[current_len] != 0) { current_len += 1; }
+            yamcs_path.clearRetainingCapacity();
+            if (default_folder[0] != 0) {
+                var current_len: usize = 0;
+                while (default_folder[current_len] != 0) {
+                    current_len += 1;
+                }
                 try yamcs_path.appendSlice(default_folder[0..current_len]);
                 try yamcs_path.appendSlice("/MissionControlFrontend/YAMCS");
             }
 
             std.debug.print("Path: {s}\n", .{yamcs_path.items});
 
-            yamcs_path.clearRetainingCapacity();
-
             var yamcs_command = [_][]const u8{ "mvn", "yamcs:run" };
-            _ = try std.Thread.spawn(yamc_config, run_process, .{std_process_init, &yamcs_command, yamcs_path.items, &yamcs_info});
+            _ = try std.Thread.spawn(yamc_config, run_process, .{ std_process_init, &yamcs_command, yamcs_path.items, &yamcs_info });
         }
-        if (ui_context.button(
-                "Execute Middleware", 
-                ui.rect.init(15, 45, 200, 30), 
-                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
-                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
-        ) {
+
+        if (ui_context.button("Execute Middleware", ui.rect.init(15, 45, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{ .DRAW_RECT = true, .DRAW_BORDER = true }) == ui.events.LeftClick) {
+            if (animation_hash.getPtr("Execute Middleware")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Execute Middleware", 1.0);
+                if (animation_hash.getPtr("Execute Middleware")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
             ui_context.set_focus();
             const mid_config = std.Thread.SpawnConfig{
                 .allocator = std_process_init.gpa,
             };
 
-            if( default_folder[0] != 0 ) {
-                var current_len : usize = 0;
-                while(default_folder[current_len] != 0) { current_len += 1; }
+            middleware_path.clearRetainingCapacity();
+
+            if (default_folder[0] != 0) {
+                var current_len: usize = 0;
+                while (default_folder[current_len] != 0) {
+                    current_len += 1;
+                }
                 try middleware_path.appendSlice(default_folder[0..current_len]);
                 try middleware_path.appendSlice("/csp_client_gnu_radio/ucf_gs_csp/");
             }
 
             std.debug.print("Path: {s}\n", .{middleware_path.items});
 
-            middleware_path.clearRetainingCapacity();
-
+            mid_command.clearRetainingCapacity();
             // Append your initial strings
-            try mid_command.append("./ucf_gs_csp");
-            if( enable_gui ) {
-                try mid_command.append("--gui");
+            try mid_command.appendSlice("./ucf_gs_csp ");
+            if (enable_gui) {
+                try mid_command.appendSlice("--gui ");
             }
-            if( enable_yamcs ) {
-                try mid_command.append("--udp-enable");
+            if (enable_yamcs) {
+                try mid_command.appendSlice("--udp-enable ");
             }
-            if( enable_can ) {
-                try mid_command.append("--can-enable");
+            if (enable_can) {
+                try mid_command.appendSlice("--can-enable ");
             }
-            if( enable_route ) {
-                try mid_command.append("--set-route");
-                try mid_command.append(middleware_args[0..middleware_args.len]);
-            }
-
-            for (mid_command.items) |item| {
-                std.debug.print("mid_command: {s}\n", .{item});
+            if (enable_route) {
+                try mid_command.appendSlice("--set-route ");
+                try mid_command.appendSlice(middleware_args[0..middleware_args.len]);
             }
 
-            _ = try std.Thread.spawn(mid_config, run_process, .{std_process_init, mid_command.items, middleware_path.items, &middleware_info});
+            var middleware_command = [_][]const u8{ "/bin/bash", "-ic", mid_command.items };
+
+            _ = try std.Thread.spawn(mid_config, run_process, .{ std_process_init, &middleware_command, middleware_path.items, &middleware_info });
         }
 
-        if (ui_context.button(
-                "Execute Grafana", 
-                ui.rect.init(15, 80, 200, 30), 
-                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
-                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
-        ) {}
+        if (ui_context.button("Execute Grafana", ui.rect.init(15, 80, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{ .DRAW_RECT = true, .DRAW_BORDER = true }) == ui.events.LeftClick) {
+            if (animation_hash.getPtr("Execute Grafana")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Execute Grafana", 1.0);
+                if (animation_hash.getPtr("Execute Grafana")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
+        }
 
-        if (ui_context.button(
-                "Execute GNU Radio", 
-                ui.rect.init(15, 115, 200, 30), 
-                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
-                ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick
-        ) {
+        if (ui_context.button("Execute GNU Radio", ui.rect.init(15, 115, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{ .DRAW_RECT = true, .DRAW_BORDER = true }) == ui.events.LeftClick) {
+            if (animation_hash.getPtr("Execute GNU Radio")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Execute GNU Radio", 1.0);
+                if (animation_hash.getPtr("Execute GNU Radio")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
             const gnu_radio_config = std.Thread.SpawnConfig{
                 .allocator = std_process_init.gpa,
             };
 
-            if( default_folder[0] != 0 ) {
-                var current_len : usize = 0;
-                while(default_folder[current_len] != 0) { current_len += 1; }
+            gnuradio_path.clearRetainingCapacity();
+
+            if (default_folder[0] != 0) {
+                var current_len: usize = 0;
+                while (default_folder[current_len] != 0) {
+                    current_len += 1;
+                }
                 try gnuradio_path.appendSlice(default_folder[0..current_len]);
                 try gnuradio_path.appendSlice("/../COMMS/gnu_radio_ucf/CurrentFlowgraph/");
             }
 
             std.debug.print("Path: {s}\n", .{gnuradio_path.items});
 
-            gnuradio_path.clearRetainingCapacity();
-
             // @todo: this does not work because it does not let you execute more than one command like this
             // @fix
-            var gnu_radio_command = [_][]const u8{
-                "conda", 
-                "run", 
-                "-n", "base",           // base environment is the default base on radioconda
-                "--no-capture-output",  // Show output directly
-                "gnuradio-companion" 
-            };
-            _ = try std.Thread.spawn(gnu_radio_config, run_process, .{std_process_init, &gnu_radio_command, gnuradio_path.items, &gnuradio_info});
+            var gnu_radio_command = [_][]const u8{ "conda", "run", "-n", "base", "gnuradio-companion" };
+            _ = try std.Thread.spawn(gnu_radio_config, run_process, .{ std_process_init, &gnu_radio_command, gnuradio_path.items, &gnuradio_info });
         }
 
         ui_context.push_rect(ui.rect.init(15, 150, @as(f32, @floatFromInt(w)) - 30, 5), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 });
 
         _ = ui_context.label("CSP Route", ui.rect.init(15, 160, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
-        if( ui_context.textbox(&middleware_args, ui.rect.init(220, 160, @as(f32, @floatFromInt(w)) - 235, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true}) == ui.events.Enter) {
+        if (ui_context.textbox(&middleware_args, ui.rect.init(220, 160, @as(f32, @floatFromInt(w)) - 235, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{ .DRAW_RECT = true }) == ui.events.Enter) {
             ui_context.set_focus();
             enable_route = true;
             var current_len: usize = 0;
             while (current_len < middleware_args.len and middleware_args[current_len] != 0) : (current_len += 1) {}
-            if( std.mem.eql(u8, middleware_args[0..current_len], "--help") ) {
+            if (std.mem.eql(u8, middleware_args[0..current_len], "--help")) {
                 show_route_help = true;
             }
         }
 
-        _ = ui_context.checkbox("Connect to YAMCS", ui.rect.init(15, 200, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_yamcs);
+        if (ui_context.checkbox("Connect to YAMCS Check", ui.rect.init(15, 200, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_yamcs) == ui.events.LeftClick) {
+            if (animation_hash.getPtr("Connect to YAMCS Check")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Connect to YAMCS Check", 1.0);
+                if (animation_hash.getPtr("Connect to YAMCS Check")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
+        }
+
         _ = ui_context.label("Connect to YAMCS", ui.rect.init(45, 200, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
-        _ = ui_context.checkbox("Enable CAN Iface", ui.rect.init(15, 235, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_can);
-        _ = ui_context.label("Enable CAN Iface", ui.rect.init(45, 235, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
-        _ = ui_context.checkbox("Enable GUI", ui.rect.init(15, 270, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_gui);
+
+        if (ui_context.checkbox("Enable CAN Iface Check", ui.rect.init(15, 235, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_can) == ui.events.LeftClick) {
+            if (animation_hash.getPtr("Enable CAN Iface Check")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Enable CAN Iface Check", 1.0);
+                if (animation_hash.getPtr("Enable CAN Iface Check")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
+        }
+        _ = (ui_context.label("Enable CAN Iface", ui.rect.init(45, 235, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{}) == ui.events.LeftClick);
+
+        if (ui_context.checkbox("Enable GUI Check", ui.rect.init(15, 270, 30, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, &enable_gui) == ui.events.LeftClick) {
+            if (animation_hash.getPtr("Enable GUI Check")) |id_ptr| {
+                anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+            } else {
+                try animation_hash.put("Enable GUI Check", 1.0);
+                if (animation_hash.getPtr("Enable GUI Check")) |id_ptr| {
+                    anim.animation_start(@intFromPtr(id_ptr), 2.0, 12);
+                }
+                std.debug.print("Key not found.\n", .{});
+            }
+        }
         _ = ui_context.label("Enable GUI", ui.rect.init(45, 270, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
 
-        if( ui_context.button("Select UCAnFly OPS folder", ui.rect.init(15, 305, 250, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{.DRAW_RECT=true, .DRAW_BORDER=true}) == ui.events.LeftClick) {
+        if (ui_context.button("Select UCAnFly OPS folder", ui.rect.init(15, 305, 250, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{ .DRAW_RECT = true, .DRAW_BORDER = true }) == ui.events.LeftClick) {
+            try animation_hash.put("Select UCAnFly OPS folder", 1.0);
+            var id: *f64 = undefined; //animation_hash.getPtr("Execute Yamcs") orelse @as(*u64, null);
+            if (animation_hash.getPtr("Select UCAnFly OPS folder")) |id_ptr| {
+                id = id_ptr;
+                anim.animation_start(@intFromPtr(id), 2.0, 12);
+            } else {
+                //id = &animation_hash;
+                std.debug.print("Key not found.\n", .{});
+            }
             c.SDL_ShowOpenFolderDialog(on_folder_dialogue_callback, &default_folder, window, "/home", false);
         }
 
-        if( show_route_help ) {
-            _ = ui_context.label(
-                "ROUTE HELP:\n \"1/0 ZMQHUB, 5/0 ZMQHUB\" \n \"1/0 CAN, 5/0 CAN\"", 
-                ui.rect.init(15, 370, 200, 30), 
-                @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, 
-                ui.layout_options{}
-            );
+        if (show_route_help) {
+            _ = ui_context.label("ROUTE HELP:\n \"1/0 ZMQHUB, 5/0 ZMQHUB\" \n \"1/0 CAN, 5/0 CAN\"", ui.rect.init(15, 370, 200, 30), @Vector(4, f32){ 0.25, 0.2, 0.2, 1.0 }, ui.layout_options{});
         }
 
         ui_context.window_end();
@@ -465,10 +526,21 @@ pub fn main(std_process_init: std.process.Init) !void {
         const boxes = ui_context.end();
 
         for (boxes) |it_box| {
+            if (it_box.options.DRAW_BORDER) {
+                var bound = @Vector(4, f32){ it_box.bounds.x, it_box.bounds.y, it_box.bounds.w, it_box.bounds.h };
+                {
+                    var id: *f64 = undefined; //animation_hash.getPtr("Execute Yamcs") orelse @as(*u64, null);
+                    if (animation_hash.getPtr(it_box.id)) |id_ptr| {
+                        id = id_ptr;
+                        const anim_alpha: f64 = anim.animation_get(@intFromPtr(id), animation_hash.get(it_box.id).?);
 
-            if(it_box.options.DRAW_BORDER) {
-                const bound = @Vector(4, f32){ it_box.bounds.x, it_box.bounds.y, it_box.bounds.w, it_box.bounds.h };
-                const color = @Vector(4, f32){it_box.color[0] * 1.3, it_box.color[1], it_box.color[2], it_box.color[3]};
+                        bound[2] *= @floatCast(anim_alpha);
+                    } else {
+                        //id = &animation_hash;
+                        //std.debug.print("Key not found.\n", .{});
+                    }
+                }
+                const color = @Vector(4, f32){ it_box.color[0] * 1.3, it_box.color[1], it_box.color[2], it_box.color[3] };
                 const verts = draw_rect(bound, color);
                 const idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
@@ -476,12 +548,25 @@ pub fn main(std_process_init: std.process.Init) !void {
                     std.debug.print("RenderGeometry failed: {s}\n", .{c.SDL_GetError()});
                 }
             }
-            if(it_box.options.DRAW_RECT) {
-                var border_padding : f32 = 0;
-                if(it_box.options.DRAW_BORDER) {
+            if (it_box.options.DRAW_RECT) {
+                var border_padding: f32 = 0;
+                if (it_box.options.DRAW_BORDER) {
                     border_padding = 2;
                 }
-                const bound = @Vector(4, f32){ it_box.bounds.x + border_padding, it_box.bounds.y + border_padding, it_box.bounds.w - 2*border_padding, it_box.bounds.h - 2*border_padding };
+                var bound = @Vector(4, f32){ it_box.bounds.x + border_padding, it_box.bounds.y + border_padding, it_box.bounds.w - 2 * border_padding, it_box.bounds.h - 2 * border_padding };
+
+                {
+                    var id: *f64 = undefined; //animation_hash.getPtr("Execute Yamcs") orelse @as(*u64, null);
+                    if (animation_hash.getPtr(it_box.id)) |id_ptr| {
+                        id = id_ptr;
+                        const anim_alpha: f64 = anim.animation_get(@intFromPtr(id), animation_hash.get(it_box.id).?);
+
+                        bound[2] *= @floatCast(anim_alpha);
+                    } else {
+                        //id = &animation_hash;
+                        //std.debug.print("Key not found.\n", .{});
+                    }
+                }
                 const verts = draw_rect(bound, it_box.color);
                 const idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
@@ -490,7 +575,7 @@ pub fn main(std_process_init: std.process.Init) !void {
                 }
             }
 
-            if( it_box.options.DRAW_TEXT ) {
+            if (it_box.options.DRAW_TEXT) {
                 const bound = @Vector(4, f32){ it_box.bounds.x + 2, it_box.bounds.y + 2, it_box.bounds.w - 4, it_box.bounds.h - 4 };
                 const message = it_box.id;
                 const text_obj = c.TTF_CreateText(text_engine, font, @ptrCast(message.ptr), @intCast(message.len)) orelse return error.TextCreate;
@@ -507,9 +592,9 @@ pub fn main(std_process_init: std.process.Init) !void {
                 // 3. Draw at center (pass renderer)
                 _ = c.TTF_DrawRendererText(text_obj, center_x, center_y);
 
-                if( it_box.options.INPUT_TEXT ) {
+                if (it_box.options.INPUT_TEXT) {
                     const _bound = @Vector(4, f32){ center_x + @as(f32, @floatFromInt(text_w)), bound[1], 10, bound[3] };
-                    const _verts = draw_rect(_bound, @Vector(4, f32){0.1, 0.2, 0.1, 0.5});
+                    const _verts = draw_rect(_bound, @Vector(4, f32){ 0.1, 0.2, 0.1, 0.5 });
                     const _idx = @Vector(6, i32){ 0, 1, 2, 2, 1, 3 };
 
                     if (!c.SDL_RenderGeometry(renderer, null, &_verts[0], 4, &_idx[0], 6)) {
